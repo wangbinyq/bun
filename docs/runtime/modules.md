@@ -273,20 +273,20 @@ Bun supports import path re-mapping through TypeScript’s [`compilerOptions.pat
 {
   "compilerOptions": {
     "paths": {
-      "config": ["./config.ts"],        // map specifier to file
-      "components/*": ["components/*"], // wildcard matching
+      "config": ["./config.ts"],         // map specifier to file
+      "components/*": ["components/*"],  // wildcard matching
     }
   }
 }
-```  
+```
 
 Bun also supports [Node.js-style subpath imports](https://nodejs.org/api/packages.html#subpath-imports) in `package.json`, where mapped paths must start with `#`. This approach doesn’t work as well with editors, but both options can be used together.  
 
 ```jsonc#package.json
 {
   "imports": {
-    "#config": "./config.ts",          // map specifier to file
-    "#components/*": "./components/*"  // wildcard matching
+    "#config": "./config.ts",           // map specifier to file
+    "#components/*": "./components/*"   // wildcard matching
   }
 }
 ```
