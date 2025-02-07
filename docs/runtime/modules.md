@@ -263,10 +263,6 @@ await Bun.build({
 
 ## Path re-mapping
 
-Here's how we can include that callout in the top example for clarity, especially for users working with JavaScript:
-
----
-
 Bun supports import path re-mapping through TypeScript’s [`compilerOptions.paths`](https://www.typescriptlang.org/tsconfig#paths) in `tsconfig.json`, which works well with editors. If you aren't a TypeScript user, you can achieve the same behavior by using a [`jsconfig.json`](https://code.visualstudio.com/docs/languages/jsconfig) in your project root.  
 
 ```jsonc#tsconfig.json
