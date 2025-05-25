@@ -473,43 +473,10 @@ _bun_run_completion() {
         '--hot[Enable auto reload in bun'"'"'s JavaScript runtime]' \
         '--watch[Automatically restart bun'"'"'s JavaScript runtime on file change]' \
         '--no-install[Disable auto install in bun'"'"'s JavaScript runtime]' \
-        '--install[Install dependencies automatically when no node_modules are present, default: "auto". "force" to ignore node_modules, fallback to install any missing]: :->install_' \
-        '-i[Automatically install dependencies and use global cache in bun'"'"'s runtime, equivalent to --install=fallback'] \
+        '--install[Install dependencies automatically when no node_modules are present, default: "auto". "force" to ignore node_modules, fallback to install any missing]:install' \
         '--prefer-offline[Skip staleness checks for packages in bun'"'"'s JavaScript runtime and resolve from disk]' \
         '--prefer-latest[Use the latest matching versions of packages in bun'"'"'s JavaScript runtime, always checking npm]' \
         '--silent[Don'"'"'t repeat the command for bun run]' \
-        '--dump-environment-variables[Dump environment variables from .env and process as JSON and quit. Useful for debugging]' \
-        '--dump-limits[Dump system limits. Useful for debugging]' \
-        '--timeout[Set the per-test timeout in milliseconds, default is 5000.]:timeout' \
-        '--update-snapshots[Update snapshot files]' \
-        '--rerun-each[Re-run each test file <NUMBER> times, helps catch certain bugs]:rerun' \
-        '--only[Only run tests that are marked with "test.only()"]' \
-        '--todo[Include tests that are marked with "test.todo()"]' \
-        '--coverage[Generate a coverage profile]' \
-        '--coverage-reporter[Report coverage in "text" and/or "lcov". Defaults to "text".]:coverage-reporter' \
-        '--coverage-dir[Directory for coverage files. Defaults to "coverage".]:coverage-dir' \
-        '--bail[Exit the test suite after <NUMBER> failures. If you do not specify a number, it defaults to 1.]:bail' \
-        '--test-name-pattern[Run only tests with a name that matches the given regex]:pattern' \
-        '-t[Run only tests with a name that matches the given regex]:pattern' \
-        '--minify[Enable all minification flags]' \
-        '--minify-syntax[Minify syntax and inline data]' \
-        '--minify-whitespace[Minify whitespace]' \
-        '--minify-identifiers[Minify identifiers]' \
-        '--sourcemap[Generate sourcemaps]:sourcemap' \
-        '--target[The intended execution environment for the bundle. "browser", "bun" or "node"]:target' \
-        '--splitting[Whether to enable code splitting (requires --outdir)]' \
-        '--compile[Generate a standalone binary from a TypeScript or JavaScript file]' \
-        '--format[Specifies the module format to be used in the generated bundles]:format' \
-        '--env-file[Load environment variables from the specified file(s)]:env-file' \
-        '--inspect[Activate Bun'"'"'s Debugger]:inspect' \
-        '--inspect-wait[Activate Bun'"'"'s Debugger, wait for a connection before executing]:inspect-wait' \
-        '--inspect-brk[Activate Bun'"'"'s Debugger, set breakpoint on first line of code and wait]:inspect-brk' \
-        '--hot[Enable auto reload in bun'"'"'s JavaScript runtime]' \
-        '--watch[Automatically restart bun'"'"'s JavaScript runtime on file change]' \
-        '--no-install[Disable auto install in bun'"'"'s JavaScript runtime]' \
-        '--install[Install dependencies automatically when no node_modules are present, default: \"auto\". \"force\" to ignore node_modules, fallback to install any missing]:install' \
-        '--prefer-offline[Skip staleness checks for packages in bun'"'"'s JavaScript runtime and resolve from disk]' \
-        '--prefer-latest[Use the latest matching versions of packages in bun'"'"'s JavaScript runtime, always checking npm]' \
         '--dump-environment-variables[Dump environment variables from .env and process as JSON and quit. Useful for debugging]' \
         '--dump-limits[Dump system limits. Useful for debugging]' &&
         ret=0
@@ -696,7 +663,7 @@ _bun_test_completion() {
         '--watch[Automatically restart bun'"'"'s JavaScript runtime on file change]' \
         '--timeout[Set the per-test timeout in milliseconds, default is 5000.]:timeout' \
         '--update-snapshots[Update snapshot files]' \
-        '--rerun-each[Re-run each test file <NUMBER> times, helps catch certain bugs]:rerun' \
+        '--rerun-each[Re-run each test file <NUMBER> times, helps catch certain bugs]:rerun-each' \
         '--only[Only run tests that are marked with "test.only()"]' \
         '--todo[Include tests that are marked with "test.todo()"]' \
         '--coverage[Generate a coverage profile]' \

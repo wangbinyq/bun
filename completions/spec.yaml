@@ -273,6 +273,10 @@ subcommands:
       - name: test-name-pattern
         type: string
         summary: "Run only tests with a name that matches the given regex."
+
+  build:
+    summary: Build and bundle files with Bun
+    options:
       - name: minify
         type: boolean
         summary: "Enable all minification flags"
@@ -344,4 +348,3 @@ parameters:
         SHELL=zsh bun getcompletes r
 
 # vim:et:sts=2:sws=2:sw=2:foldmethod=indent
-
