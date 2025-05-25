@@ -348,3 +348,4 @@ parameters:
         SHELL=zsh bun getcompletes r
 
 # vim:et:sts=2:sws=2:sw=2:foldmethod=indent
+
