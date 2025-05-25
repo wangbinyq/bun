@@ -273,7 +273,7 @@ _bun_pm_completion() {
             'audit\:"run a security audit of dependencies in Bun'"'"'s lockfile"'
             'cache\:"print the path to the cache folder" '
             'pack\:"create a tarball of the current workspace" '
-            'migrate\:"migrate another package manager\'s lockfile without installing anything" '
+            'migrate\:"migrate another package manager'"'"'s lockfile without installing anything" '
             'untrusted\:"print current untrusted dependencies with scripts" '
             'trust\:"run scripts for untrusted dependencies and add to trustedDependencies" '
             'default-trusted\:"print the default trusted dependencies list" '
