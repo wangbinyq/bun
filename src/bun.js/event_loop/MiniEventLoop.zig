@@ -300,7 +300,20 @@ pub const JsVM = struct {
     }
 
     pub inline fn platformEventLoop(this: @This()) *JSC.PlatformEventLoop {
-        return this.vm.event_loop_handle.?;
+        // On Windows during process exit, the event loop handle can be null
+        // if the VM is shutting down. Check for this case to avoid segfault.
+        if (this.vm.event_loop_handle) |handle| {
+            return handle;
+        }
+        
+        // Handle the case where event_loop_handle is null
+        if (this.vm.has_terminated) {
+            // VM is shutting down, this is expected
+            unreachable; // Caller should check has_terminated before calling
+        }
+        
+        // This should not happen during normal operation
+        @panic("platformEventLoop: event_loop_handle is unexpectedly null");
     }
 
     pub inline fn incrementPendingUnrefCounter(this: @This()) void {
