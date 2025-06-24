@@ -1,4 +1,4 @@
-const bun = @import("root").bun;
+const bun = @import("bun");
 const picohttp = bun.picohttp;
 const std = @import("std");
 
@@ -7,11 +7,14 @@ const ACL = @import("./acl.zig").ACL;
 const StorageClass = @import("./storage_class.zig").StorageClass;
 
 const JSC = bun.JSC;
-const RareData = JSC.RareData;
 const strings = bun.strings;
-const DotEnv = bun.DotEnv;
 
 pub const S3Credentials = struct {
+    const RefCount = bun.ptr.RefCount(@This(), "ref_count", deinit, .{});
+    pub const ref = RefCount.ref;
+    pub const deref = RefCount.deref;
+
+    ref_count: RefCount,
     accessKeyId: []const u8,
     secretAccessKey: []const u8,
     region: []const u8,
@@ -23,8 +26,6 @@ pub const S3Credentials = struct {
     insecure_http: bool = false,
     /// indicates if the endpoint is a virtual hosted style bucket
     virtual_hosted_style: bool = false,
-    ref_count: u32 = 1,
-    pub usingnamespace bun.NewRefCounted(@This(), deinit, null);
 
     pub fn estimatedSize(this: *const @This()) usize {
         return @sizeOf(S3Credentials) + this.accessKeyId.len + this.region.len + this.secretAccessKey.len + this.endpoint.len + this.bucket.len;
@@ -216,7 +217,8 @@ pub const S3Credentials = struct {
         return new_credentials;
     }
     pub fn dupe(this: *const @This()) *S3Credentials {
-        return S3Credentials.new(.{
+        return bun.new(S3Credentials, .{
+            .ref_count = .init(),
             .accessKeyId = if (this.accessKeyId.len > 0)
                 bun.default_allocator.dupe(u8, this.accessKeyId) catch bun.outOfMemory()
             else
@@ -251,7 +253,7 @@ pub const S3Credentials = struct {
             .virtual_hosted_style = this.virtual_hosted_style,
         });
     }
-    pub fn deinit(this: *@This()) void {
+    fn deinit(this: *@This()) void {
         if (this.accessKeyId.len > 0) {
             bun.default_allocator.free(this.accessKeyId);
         }
@@ -270,7 +272,7 @@ pub const S3Credentials = struct {
         if (this.sessionToken.len > 0) {
             bun.default_allocator.free(this.sessionToken);
         }
-        this.destroy();
+        bun.destroy(this);
     }
 
     const log = bun.Output.scoped(.AWS, false);

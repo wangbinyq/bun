@@ -1,14 +1,14 @@
 handler: *WebSocketServer.Handler,
 this_value: JSValue = .zero,
 flags: Flags = .{},
-signal: ?*JSC.AbortSignal = null,
+signal: ?*bun.webcore.AbortSignal = null,
 
 // We pack the per-socket data into this struct below
 const Flags = packed struct(u64) {
     ssl: bool = false,
     closed: bool = false,
     opened: bool = false,
-    binary_type: JSC.BinaryType = .Buffer,
+    binary_type: JSC.ArrayBuffer.BinaryType = .Buffer,
     packed_websocket_ptr: u57 = 0,
 
     inline fn websocket(this: Flags) uws.AnyWebSocket {
@@ -27,8 +27,12 @@ inline fn websocket(this: *const ServerWebSocket) uws.AnyWebSocket {
     return this.flags.websocket();
 }
 
-pub usingnamespace JSC.Codegen.JSServerWebSocket;
-pub usingnamespace bun.New(ServerWebSocket);
+pub const js = JSC.Codegen.JSServerWebSocket;
+pub const toJS = js.toJS;
+pub const fromJS = js.fromJS;
+pub const fromJSDirect = js.fromJSDirect;
+
+pub const new = bun.TrivialNew(ServerWebSocket);
 
 pub fn memoryCost(this: *const ServerWebSocket) usize {
     if (this.flags.closed) {
@@ -64,7 +68,7 @@ pub fn onOpen(this: *ServerWebSocket, ws: uws.AnyWebSocket) void {
     this.flags.opened = false;
     if (value_to_cache != .zero) {
         const current_this = this.getThisValue();
-        ServerWebSocket.dataSetCached(current_this, globalObject, value_to_cache);
+        js.dataSetCached(current_this, globalObject, value_to_cache);
     }
 
     if (onOpenHandler.isEmptyOrUndefinedOrNull()) return;
@@ -239,7 +243,7 @@ pub fn onPing(this: *ServerWebSocket, _: uws.AnyWebSocket, data: []const u8) voi
 
     _ = cb.call(
         globalThis,
-        .undefined,
+        .js_undefined,
         &[_]JSC.JSValue{ this.getThisValue(), this.binaryToJS(globalThis, data) },
     ) catch |e| {
         const err = globalThis.takeException(e);
@@ -267,7 +271,7 @@ pub fn onPong(this: *ServerWebSocket, _: uws.AnyWebSocket, data: []const u8) voi
 
     _ = cb.call(
         globalThis,
-        .undefined,
+        .js_undefined,
         &[_]JSC.JSValue{ this.getThisValue(), this.binaryToJS(globalThis, data) },
     ) catch |e| {
         const err = globalThis.takeException(e);
@@ -289,7 +293,7 @@ pub fn onClose(this: *ServerWebSocket, _: uws.AnyWebSocket, code: i32, message: 
     const signal = this.signal;
     this.signal = null;
 
-    if (ServerWebSocket.socketGetCached(this.getThisValue())) |socket| {
+    if (js.socketGetCached(this.getThisValue())) |socket| {
         Bun__callNodeHTTPServerSocketOnClose(socket);
     }
 
@@ -320,7 +324,7 @@ pub fn onClose(this: *ServerWebSocket, _: uws.AnyWebSocket, code: i32, message: 
 
         _ = handler.onClose.call(
             globalObject,
-            .undefined,
+            .js_undefined,
             &[_]JSC.JSValue{ this.getThisValue(), JSValue.jsNumber(code), bun.String.createUTF8ForJS(globalObject, message) },
         ) catch |e| {
             const err = globalObject.takeException(e);
@@ -351,7 +355,7 @@ pub fn constructor(globalObject: *JSC.JSGlobalObject, _: *JSC.CallFrame) bun.JSE
 
 pub fn finalize(this: *ServerWebSocket) void {
     log("finalize", .{});
-    this.destroy();
+    bun.destroy(this);
 }
 
 pub fn publish(
@@ -670,7 +674,7 @@ pub fn cork(
     }
 
     if (this.isClosed()) {
-        return JSValue.jsUndefined();
+        return .js_undefined;
     }
 
     var corker = Corker{
@@ -1023,17 +1027,16 @@ pub fn getData(
     _: *JSC.JSGlobalObject,
 ) JSValue {
     log("getData()", .{});
-    return JSValue.jsUndefined();
+    return .js_undefined;
 }
 
 pub fn setData(
     this: *ServerWebSocket,
     globalObject: *JSC.JSGlobalObject,
     value: JSC.JSValue,
-) callconv(.C) bool {
+) void {
     log("setData()", .{});
-    ServerWebSocket.dataSetCached(this.this_value, globalObject, value);
-    return true;
+    js.dataSetCached(this.this_value, globalObject, value);
 }
 
 pub fn getReadyState(
@@ -1061,7 +1064,7 @@ pub fn close(
     this.this_value = this_value;
 
     if (this.isClosed()) {
-        return .undefined;
+        return .js_undefined;
     }
 
     const code = brk: {
@@ -1086,7 +1089,7 @@ pub fn close(
 
     this.flags.closed = true;
     this.websocket().end(code, message_value.slice());
-    return .undefined;
+    return .js_undefined;
 }
 
 pub fn terminate(
@@ -1104,14 +1107,14 @@ pub fn terminate(
     this.this_value = this_value;
 
     if (this.isClosed()) {
-        return .undefined;
+        return .js_undefined;
     }
 
     this.flags.closed = true;
     this.this_value.unprotect();
     this.websocket().close();
 
-    return .undefined;
+    return .js_undefined;
 }
 
 pub fn getBinaryType(
@@ -1128,20 +1131,19 @@ pub fn getBinaryType(
     };
 }
 
-pub fn setBinaryType(this: *ServerWebSocket, globalThis: *JSC.JSGlobalObject, value: JSC.JSValue) callconv(.C) bool {
+pub fn setBinaryType(this: *ServerWebSocket, globalThis: *JSC.JSGlobalObject, value: JSC.JSValue) bun.JSError!void {
     log("setBinaryType()", .{});
 
-    const btype = JSC.BinaryType.fromJSValue(globalThis, value) catch return false;
+    const btype = try JSC.ArrayBuffer.BinaryType.fromJSValue(globalThis, value);
     switch (btype orelse
         // some other value which we don't support
         .Float64Array) {
         .ArrayBuffer, .Buffer, .Uint8Array => |val| {
             this.flags.binary_type = val;
-            return true;
+            return;
         },
         else => {
-            globalThis.throw("binaryType must be either \"uint8array\" or \"arraybuffer\" or \"nodebuffer\"", .{}) catch {};
-            return false;
+            return globalThis.throw("binaryType must be either \"uint8array\" or \"arraybuffer\" or \"nodebuffer\"", .{});
         },
     }
 }
@@ -1242,7 +1244,7 @@ pub fn getRemoteAddress(
     globalThis: *JSC.JSGlobalObject,
 ) JSValue {
     if (this.isClosed()) {
-        return JSValue.jsUndefined();
+        return .js_undefined;
     }
 
     var buf: [64]u8 = [_]u8{0} ** 64;
@@ -1252,7 +1254,7 @@ pub fn getRemoteAddress(
     const address: std.net.Address = switch (address_bytes.len) {
         4 => std.net.Address.initIp4(address_bytes[0..4].*, 0),
         16 => std.net.Address.initIp6(address_bytes[0..16].*, 0, 0, 0),
-        else => return JSValue.jsUndefined(),
+        else => return .js_undefined,
     };
 
     const text = bun.fmt.formatIp(address, &text_buf) catch unreachable;
@@ -1270,7 +1272,7 @@ const Corker = struct {
         const this_value = this.this_value;
         this.result = this.callback.call(
             this.globalObject,
-            if (this_value == .zero) .undefined else this_value,
+            if (this_value == .zero) .js_undefined else this_value,
             this.args,
         ) catch |err| this.globalObject.takeException(err);
     }
@@ -1281,17 +1283,12 @@ extern "c" fn Bun__callNodeHTTPServerSocketOnClose(JSC.JSValue) void;
 const ServerWebSocket = @This();
 
 const JSGlobalObject = JSC.JSGlobalObject;
-const JSObject = JSC.JSObject;
 const JSValue = JSC.JSValue;
 const JSC = bun.JSC;
-const bun = @import("root").bun;
+const bun = @import("bun");
 const string = []const u8;
-const Bun = JSC.API.Bun;
-const max_addressable_memory = bun.max_addressable_memory;
-const Environment = bun.Environment;
 const std = @import("std");
-const assert = bun.assert;
 const ZigString = JSC.ZigString;
-const WebSocketServer = @import("../server.zig").WebSocketServer;
+const WebSocketServer = @import("../server.zig").WebSocketServerContext;
 const uws = bun.uws;
 const Output = bun.Output;

@@ -1,13 +1,8 @@
 const std = @import("std");
 const JSC = bun.JSC;
-const strings = bun.strings;
-const bun = @import("root").bun;
-const Lock = bun.Mutex;
+const bun = @import("bun");
 const JSValue = JSC.JSValue;
-const ZigString = JSC.ZigString;
 const TODO_EXCEPTION: JSC.C.ExceptionRef = null;
-
-const Channel = @import("../sync.zig").Channel;
 
 const log = bun.Output.scoped(.napi, false);
 
@@ -81,8 +76,8 @@ pub const napi_ref = *Ref;
 pub const NapiHandleScope = opaque {
     pub extern fn NapiHandleScope__open(env: *NapiEnv, escapable: bool) ?*NapiHandleScope;
     pub extern fn NapiHandleScope__close(env: *NapiEnv, current: ?*NapiHandleScope) void;
-    extern fn NapiHandleScope__append(env: *NapiEnv, value: JSC.JSValueReprInt) void;
-    extern fn NapiHandleScope__escape(handleScope: *NapiHandleScope, value: JSC.JSValueReprInt) bool;
+    extern fn NapiHandleScope__append(env: *NapiEnv, value: JSC.JSValue.backing_int) void;
+    extern fn NapiHandleScope__escape(handleScope: *NapiHandleScope, value: JSC.JSValue.backing_int) bool;
 
     /// Create a new handle scope in the given environment, or return null if creating one now is
     /// unsafe (i.e. inside a finalizer)
@@ -275,7 +270,7 @@ pub export fn napi_get_undefined(env_: napi_env, result_: ?*napi_value) napi_sta
     const result = result_ orelse {
         return env.invalidArg();
     };
-    result.set(env, JSValue.jsUndefined());
+    result.set(env, .js_undefined);
     return env.ok();
 }
 pub export fn napi_get_null(env_: napi_env, result_: ?*napi_value) napi_status {
@@ -312,7 +307,7 @@ pub export fn napi_create_array(env_: napi_env, result_: ?*napi_value) napi_stat
     const result = result_ orelse {
         return env.invalidArg();
     };
-    result.set(env, JSValue.createEmptyArray(env.toJS(), 0));
+    result.set(env, JSValue.createEmptyArray(env.toJS(), 0) catch return env.setLastError(.pending_exception));
     return env.ok();
 }
 pub export fn napi_create_array_with_length(env_: napi_env, length: usize, result_: ?*napi_value) napi_status {
@@ -329,7 +324,7 @@ pub export fn napi_create_array_with_length(env_: napi_env, length: usize, resul
     // Node and V8 convert out-of-bounds array sizes to 0
     const len = std.math.cast(u32, length) orelse 0;
 
-    const array = JSC.JSValue.createEmptyArray(env.toJS(), len);
+    const array = JSC.JSValue.createEmptyArray(env.toJS(), len) catch return env.setLastError(.pending_exception);
     array.ensureStillAlive();
     result.set(env, array);
     return env.ok();
@@ -423,7 +418,7 @@ pub export fn napi_create_string_utf8(env_: napi_env, str: ?[*]const u8, length:
     const slice: []const u8 = brk: {
         if (str) |ptr| {
             if (NAPI_AUTO_LENGTH == length) {
-                break :brk bun.sliceTo(@as([*:0]const u8, @ptrCast(str)), 0);
+                break :brk bun.sliceTo(@as([*:0]const u8, @ptrCast(ptr)), 0);
             } else if (length > std.math.maxInt(i32)) {
                 return env.invalidArg();
             } else {
@@ -459,7 +454,7 @@ pub export fn napi_create_string_utf16(env_: napi_env, str: ?[*]const char16_t, 
     const slice: []const u16 = brk: {
         if (str) |ptr| {
             if (NAPI_AUTO_LENGTH == length) {
-                break :brk bun.sliceTo(@as([*:0]const u16, @ptrCast(str)), 0);
+                break :brk bun.sliceTo(@as([*:0]const u16, @ptrCast(ptr)), 0);
             } else if (length > std.math.maxInt(i32)) {
                 return env.invalidArg();
             } else {
@@ -575,7 +570,7 @@ pub export fn napi_get_array_length(env_: napi_env, value_: napi_value, result_:
         return env.setLastError(.array_expected);
     }
 
-    result.* = @as(u32, @truncate(value.getLength(env.toJS())));
+    result.* = @truncate(value.getLength(env.toJS()) catch return env.setLastError(.pending_exception));
     return env.ok();
 }
 pub export fn napi_strict_equals(env_: napi_env, lhs_: napi_value, rhs_: napi_value, result_: ?*bool) napi_status {
@@ -587,8 +582,8 @@ pub export fn napi_strict_equals(env_: napi_env, lhs_: napi_value, rhs_: napi_va
         return env.invalidArg();
     };
     const lhs, const rhs = .{ lhs_.get(), rhs_.get() };
-    // there is some nuance with NaN here i'm not sure about
-    result.* = lhs.isSameValue(rhs, env.toJS());
+    // TODO: this needs to be strictEquals not isSameValue (NaN !== NaN and -0 === 0)
+    result.* = lhs.isSameValue(rhs, env.toJS()) catch return env.setLastError(.pending_exception);
     return env.ok();
 }
 pub extern fn napi_call_function(env: napi_env, recv: napi_value, func: napi_value, argc: usize, argv: [*c]const napi_value, result: *napi_value) napi_status;
@@ -679,7 +674,7 @@ pub export fn napi_make_callback(env_: napi_env, _: *anyopaque, recv_: napi_valu
         if (recv != .zero)
             recv
         else
-            .undefined,
+            .js_undefined,
         if (arg_count > 0 and args != null)
             @as([*]const JSC.JSValue, @ptrCast(args.?))[0..arg_count]
         else
@@ -1002,30 +997,8 @@ pub export fn napi_is_date(env_: napi_env, value_: napi_value, is_date_: ?*bool)
 }
 pub extern fn napi_get_date_value(env: napi_env, value: napi_value, result: *f64) napi_status;
 pub extern fn napi_add_finalizer(env: napi_env, js_object: napi_value, native_object: ?*anyopaque, finalize_cb: napi_finalize, finalize_hint: ?*anyopaque, result: napi_ref) napi_status;
-pub export fn napi_create_bigint_int64(env_: napi_env, value: i64, result_: ?*napi_value) napi_status {
-    log("napi_create_bigint_int64", .{});
-    const env = env_ orelse {
-        return envIsNull();
-    };
-    env.checkGC();
-    const result = result_ orelse {
-        return env.invalidArg();
-    };
-    result.set(env, JSC.JSValue.fromInt64NoTruncate(env.toJS(), value));
-    return env.ok();
-}
-pub export fn napi_create_bigint_uint64(env_: napi_env, value: u64, result_: ?*napi_value) napi_status {
-    log("napi_create_bigint_uint64", .{});
-    const env = env_ orelse {
-        return envIsNull();
-    };
-    env.checkGC();
-    const result = result_ orelse {
-        return env.invalidArg();
-    };
-    result.set(env, JSC.JSValue.fromUInt64NoTruncate(env.toJS(), value));
-    return env.ok();
-}
+pub extern fn napi_create_bigint_int64(env: napi_env, value: i64, result_: ?*napi_value) napi_status;
+pub extern fn napi_create_bigint_uint64(env: napi_env, value: u64, result_: ?*napi_value) napi_status;
 pub extern fn napi_create_bigint_words(env: napi_env, sign_bit: c_int, word_count: usize, words: [*c]const u64, result: *napi_value) napi_status;
 pub extern fn napi_get_value_bigint_int64(_: napi_env, value_: napi_value, result_: ?*i64, _: *bool) napi_status;
 pub extern fn napi_get_value_bigint_uint64(_: napi_env, value_: napi_value, result_: ?*u64, _: *bool) napi_status;
@@ -1037,7 +1010,6 @@ pub extern fn napi_get_instance_data(env: napi_env, data: [*]*anyopaque) napi_st
 pub extern fn napi_detach_arraybuffer(env: napi_env, arraybuffer: napi_value) napi_status;
 pub extern fn napi_is_detached_arraybuffer(env: napi_env, value: napi_value, result: *bool) napi_status;
 
-pub const struct_napi_async_work__ = opaque {};
 const WorkPool = @import("../work_pool.zig").WorkPool;
 const WorkPoolTask = @import("../work_pool.zig").Task;
 
@@ -1045,18 +1017,16 @@ const WorkPoolTask = @import("../work_pool.zig").Task;
 pub const napi_async_work = struct {
     task: WorkPoolTask = .{ .callback = &runFromThreadPool },
     concurrent_task: JSC.ConcurrentTask = .{},
-    completion_task: ?*anyopaque = null,
     event_loop: *JSC.EventLoop,
     global: *JSC.JSGlobalObject,
     env: *NapiEnv,
-    execute: napi_async_execute_callback = null,
-    complete: napi_async_complete_callback = null,
+    execute: napi_async_execute_callback,
+    complete: ?napi_async_complete_callback,
     data: ?*anyopaque = null,
-    status: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-    can_deinit: bool = false,
-    wait_for_deinit: bool = false,
+    status: std.atomic.Value(Status) = .init(.pending),
     scheduled: bool = false,
-    ref: Async.KeepAlive = .{},
+    poll_ref: Async.KeepAlive = .{},
+
     pub const Status = enum(u32) {
         pending = 0,
         started = 1,
@@ -1064,83 +1034,80 @@ pub const napi_async_work = struct {
         cancelled = 3,
     };
 
-    pub fn create(env: *NapiEnv, execute: napi_async_execute_callback, complete: napi_async_complete_callback, data: ?*anyopaque) !*napi_async_work {
-        const work = try bun.default_allocator.create(napi_async_work);
+    pub fn new(env: *NapiEnv, execute: napi_async_execute_callback, complete: ?napi_async_complete_callback, data: ?*anyopaque) *napi_async_work {
         const global = env.toJS();
-        work.* = .{
+
+        const work = bun.new(napi_async_work, .{
             .global = global,
             .env = env,
             .execute = execute,
             .event_loop = global.bunVM().eventLoop(),
             .complete = complete,
             .data = data,
-        };
+        });
         return work;
     }
 
-    pub fn runFromThreadPool(task: *WorkPoolTask) void {
-        var this: *napi_async_work = @fieldParentPtr("task", task);
-
-        this.run();
-    }
-    pub fn run(this: *napi_async_work) void {
-        if (this.status.cmpxchgStrong(@intFromEnum(Status.pending), @intFromEnum(Status.started), .seq_cst, .seq_cst)) |state| {
-            if (state == @intFromEnum(Status.cancelled)) {
-                if (this.wait_for_deinit) {
-                    // this might cause a segfault due to Task using a linked list!
-                    bun.default_allocator.destroy(this);
-                }
-            }
-            return;
-        }
-        this.execute.?(this.env, this.data);
-        this.status.store(@intFromEnum(Status.completed), .seq_cst);
-
-        this.event_loop.enqueueTaskConcurrent(this.concurrent_task.from(this, .manual_deinit));
+    pub fn destroy(this: *napi_async_work) void {
+        bun.destroy(this);
     }
 
     pub fn schedule(this: *napi_async_work) void {
         if (this.scheduled) return;
         this.scheduled = true;
-        this.ref.ref(this.global.bunVM());
+        this.poll_ref.ref(this.global.bunVM());
         WorkPool.schedule(&this.task);
     }
 
-    pub fn cancel(this: *napi_async_work) bool {
-        this.ref.unref(this.global.bunVM());
-        return this.status.cmpxchgStrong(@intFromEnum(Status.cancelled), @intFromEnum(Status.pending), .seq_cst, .seq_cst) != null;
+    pub fn runFromThreadPool(task: *WorkPoolTask) void {
+        var this: *napi_async_work = @fieldParentPtr("task", task);
+        this.run();
     }
-
-    pub fn deinit(this: *napi_async_work) void {
-        this.ref.unref(this.global.bunVM());
-
-        if (this.can_deinit) {
-            bun.default_allocator.destroy(this);
-            return;
+    fn run(this: *napi_async_work) void {
+        if (this.status.cmpxchgStrong(.pending, .started, .seq_cst, .seq_cst)) |state| {
+            if (state == .cancelled) {
+                this.event_loop.enqueueTaskConcurrent(this.concurrent_task.from(this, .manual_deinit));
+                return;
+            }
         }
-        this.wait_for_deinit = true;
+        this.execute(this.env, this.data);
+        this.status.store(.completed, .seq_cst);
+
+        this.event_loop.enqueueTaskConcurrent(this.concurrent_task.from(this, .manual_deinit));
     }
 
-    fn runFromJSWithError(this: *napi_async_work) bun.JSError!void {
-        const handle_scope = NapiHandleScope.open(this.env, false);
-        defer if (handle_scope) |scope| scope.close(this.env);
-        this.complete.?(
-            this.env,
-            @intFromEnum(if (this.status.load(.seq_cst) == @intFromEnum(Status.cancelled))
-                NapiStatus.cancelled
-            else
-                NapiStatus.ok),
+    pub fn cancel(this: *napi_async_work) bool {
+        return this.status.cmpxchgStrong(.pending, .cancelled, .seq_cst, .seq_cst) == null;
+    }
+
+    pub fn runFromJS(this: *napi_async_work, vm: *JSC.VirtualMachine, global: *JSC.JSGlobalObject) void {
+        // Note: the "this" value here may already be freed by the user in `complete`
+        var poll_ref = this.poll_ref;
+        defer poll_ref.unref(vm);
+
+        // https://github.com/nodejs/node/blob/a2de5b9150da60c77144bb5333371eaca3fab936/src/node_api.cc#L1201
+        const complete = this.complete orelse {
+            return;
+        };
+
+        const env = this.env;
+        const handle_scope = NapiHandleScope.open(env, false);
+        defer if (handle_scope) |scope| scope.close(env);
+
+        const status: NapiStatus = if (this.status.load(.seq_cst) == .cancelled)
+            .cancelled
+        else
+            .ok;
+
+        complete(
+            env,
+            @intFromEnum(status),
             this.data,
         );
-        if (this.global.hasException()) {
-            return error.JSError;
-        }
-    }
 
-    pub fn runFromJS(this: *napi_async_work) void {
-        this.runFromJSWithError() catch |e| {
-            this.global.reportActiveExceptionAsUnhandled(e);
-        };
+        if (global.hasException()) {
+            global.reportActiveExceptionAsUnhandled(error.JSError);
+        }
     }
 };
 pub const napi_threadsafe_function = *ThreadSafeFunction;
@@ -1151,8 +1118,8 @@ pub const napi_threadsafe_function_release_mode = enum(c_uint) {
 pub const napi_tsfn_nonblocking = 0;
 pub const napi_tsfn_blocking = 1;
 pub const napi_threadsafe_function_call_mode = c_uint;
-pub const napi_async_execute_callback = ?*const fn (napi_env, ?*anyopaque) callconv(.C) void;
-pub const napi_async_complete_callback = ?*const fn (napi_env, napi_status, ?*anyopaque) callconv(.C) void;
+pub const napi_async_execute_callback = *const fn (napi_env, ?*anyopaque) callconv(.C) void;
+pub const napi_async_complete_callback = *const fn (napi_env, napi_status, ?*anyopaque) callconv(.C) void;
 pub const napi_threadsafe_function_call_js = *const fn (napi_env, napi_value, ?*anyopaque, ?*anyopaque) callconv(.C) void;
 pub const napi_node_version = extern struct {
     major: u32,
@@ -1275,8 +1242,8 @@ pub export fn napi_create_async_work(
     env_: napi_env,
     _: napi_value,
     _: [*:0]const u8,
-    execute: napi_async_execute_callback,
-    complete: napi_async_complete_callback,
+    execute_: ?napi_async_execute_callback,
+    complete: ?napi_async_complete_callback,
     data: ?*anyopaque,
     result_: ?**napi_async_work,
 ) napi_status {
@@ -1287,9 +1254,11 @@ pub export fn napi_create_async_work(
     const result = result_ orelse {
         return env.invalidArg();
     };
-    result.* = napi_async_work.create(env, execute, complete, data) catch {
-        return env.genericFailure();
+    // https://github.com/nodejs/node/blob/a2de5b9150da60c77144bb5333371eaca3fab936/src/node_api.cc#L1245
+    const execute = execute_ orelse {
+        return env.invalidArg();
     };
+    result.* = napi_async_work.new(env, execute, complete, data);
     return env.ok();
 }
 pub export fn napi_delete_async_work(env_: napi_env, work_: ?*napi_async_work) napi_status {
@@ -1300,8 +1269,8 @@ pub export fn napi_delete_async_work(env_: napi_env, work_: ?*napi_async_work) n
     const work = work_ orelse {
         return env.invalidArg();
     };
-    bun.assert(env.toJS() == work.global);
-    work.deinit();
+    if (comptime bun.Environment.allow_assert) bun.assert(env.toJS() == work.global);
+    work.destroy();
     return env.ok();
 }
 pub export fn napi_queue_async_work(env_: napi_env, work_: ?*napi_async_work) napi_status {
@@ -1312,7 +1281,7 @@ pub export fn napi_queue_async_work(env_: napi_env, work_: ?*napi_async_work) na
     const work = work_ orelse {
         return env.invalidArg();
     };
-    bun.assert(env.toJS() == work.global);
+    if (comptime bun.Environment.allow_assert) bun.assert(env.toJS() == work.global);
     work.schedule();
     return env.ok();
 }
@@ -1324,7 +1293,7 @@ pub export fn napi_cancel_async_work(env_: napi_env, work_: ?*napi_async_work) n
     const work = work_ orelse {
         return env.invalidArg();
     };
-    bun.assert(env.toJS() == work.global);
+    if (comptime bun.Environment.allow_assert) bun.assert(env.toJS() == work.global);
     if (work.cancel()) {
         return env.ok();
     }
@@ -1414,9 +1383,9 @@ pub const Finalizer = struct {
 // TODO: generate comptime version of this instead of runtime checking
 pub const ThreadSafeFunction = struct {
     pub const Callback = union(enum) {
-        js: JSC.Strong,
+        js: JSC.Strong.Optional,
         c: struct {
-            js: JSC.Strong,
+            js: JSC.Strong.Optional,
             napi_threadsafe_function_call_js: napi_threadsafe_function_call_js,
         },
 
@@ -1446,7 +1415,7 @@ pub const ThreadSafeFunction = struct {
     lock: std.Thread.Mutex = .{},
 
     event_loop: *JSC.EventLoop,
-    tracker: JSC.AsyncTaskTracker,
+    tracker: JSC.Debugger.AsyncTaskTracker,
 
     env: *NapiEnv,
 
@@ -1465,7 +1434,7 @@ pub const ThreadSafeFunction = struct {
     closing: std.atomic.Value(ClosingState) = std.atomic.Value(ClosingState).init(.not_closing),
     aborted: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
 
-    pub usingnamespace bun.New(ThreadSafeFunction);
+    pub const new = bun.TrivialNew(ThreadSafeFunction);
 
     const ClosingState = enum(u8) {
         not_closing,
@@ -1586,7 +1555,7 @@ pub const ThreadSafeFunction = struct {
             break :brk .{ !this.isClosing(), t };
         };
 
-        this.call(task, !is_first);
+        this.call(task, !is_first) catch return false;
 
         if (queue_finalizer_after_call) {
             this.maybeQueueFinalizer();
@@ -1598,10 +1567,10 @@ pub const ThreadSafeFunction = struct {
     /// This function can be called multiple times in one tick of the event loop.
     /// See: https://github.com/nodejs/node/pull/38506
     /// In that case, we need to drain microtasks.
-    fn call(this: *ThreadSafeFunction, task: ?*anyopaque, is_first: bool) void {
+    fn call(this: *ThreadSafeFunction, task: ?*anyopaque, is_first: bool) bun.JSExecutionTerminated!void {
         const env = this.env;
         if (!is_first) {
-            this.event_loop.drainMicrotasks();
+            try this.event_loop.drainMicrotasks();
         }
         const globalObject = env.toJS();
 
@@ -1610,16 +1579,16 @@ pub const ThreadSafeFunction = struct {
 
         switch (this.callback) {
             .js => |strong| {
-                const js = strong.get() orelse .undefined;
+                const js: JSValue = strong.get() orelse .js_undefined;
                 if (js.isEmptyOrUndefinedOrNull()) {
                     return;
                 }
 
-                _ = js.call(globalObject, .undefined, &.{}) catch |err|
+                _ = js.call(globalObject, .js_undefined, &.{}) catch |err|
                     globalObject.reportActiveExceptionAsUnhandled(err);
             },
             .c => |cb| {
-                const js = cb.js.get() orelse .undefined;
+                const js: JSValue = cb.js.get() orelse .js_undefined;
 
                 const handle_scope = NapiHandleScope.open(env, false);
                 defer if (handle_scope) |scope| scope.close(env);
@@ -1679,7 +1648,7 @@ pub const ThreadSafeFunction = struct {
 
         this.callback.deinit();
         this.queue.deinit();
-        this.destroy();
+        bun.destroy(this);
     }
 
     pub fn ref(this: *ThreadSafeFunction) void {
@@ -1760,16 +1729,16 @@ pub export fn napi_create_threadsafe_function(
         .callback = if (call_js_cb) |c| .{
             .c = .{
                 .napi_threadsafe_function_call_js = c,
-                .js = if (func == .zero) .empty else JSC.Strong.create(func.withAsyncContextIfNeeded(env.toJS()), vm.global),
+                .js = if (func == .zero) .empty else JSC.Strong.Optional.create(func.withAsyncContextIfNeeded(env.toJS()), vm.global),
             },
         } else .{
-            .js = if (func == .zero) .empty else JSC.Strong.create(func.withAsyncContextIfNeeded(env.toJS()), vm.global),
+            .js = if (func == .zero) .empty else JSC.Strong.Optional.create(func.withAsyncContextIfNeeded(env.toJS()), vm.global),
         },
         .ctx = context,
         .queue = ThreadSafeFunction.Queue.init(max_queue_size, bun.default_allocator),
         .thread_count = .{ .raw = @intCast(initial_thread_count) },
         .poll_ref = Async.KeepAlive.init(),
-        .tracker = JSC.AsyncTaskTracker.init(vm),
+        .tracker = JSC.Debugger.AsyncTaskTracker.init(vm),
     });
 
     function.finalizer = .{ .env = env, .data = thread_finalize_data, .fun = thread_finalize_cb };
@@ -1816,9 +1785,7 @@ pub export fn napi_ref_threadsafe_function(env_: napi_env, func: napi_threadsafe
     return env.ok();
 }
 
-const NAPI_VERSION = @as(c_int, 8);
 const NAPI_AUTO_LENGTH = std.math.maxInt(usize);
-const NAPI_MODULE_VERSION = @as(c_int, 1);
 
 /// v8:: C++ symbols defined in v8.cpp
 ///
@@ -2474,7 +2441,7 @@ pub const NapiFinalizerTask = struct {
             // Immediate tasks won't run, so we run this as a cleanup hook instead
             vm.rareData().pushCleanupHook(vm.global, this, runAsCleanupHook);
         } else {
-            globalThis.bunVM().event_loop.enqueueImmediateTask(JSC.Task.init(this));
+            globalThis.bunVM().event_loop.enqueueTask(JSC.Task.init(this));
         }
     }
 

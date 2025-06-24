@@ -79,11 +79,13 @@ typedef struct BunString {
     // This one usually will clone the raw bytes.
     WTF::String toWTFString() const;
 
+    bool isEmpty() const;
+
 } BunString;
 
 typedef struct ZigErrorType {
     ZigErrorCode code;
-    void* ptr;
+    JSC::EncodedJSValue value;
 } ZigErrorType;
 typedef union ErrorableZigStringResult {
     ZigString value;
@@ -106,7 +108,7 @@ typedef struct ResolvedSource {
     BunString source_code;
     BunString source_url;
     bool isCommonJSModule;
-    uint32_t cjsCustomExtensionIndex;
+    JSC::EncodedJSValue cjsCustomExtension;
     void* allocator;
     JSC::EncodedJSValue jsvalue_for_export;
     uint32_t tag;
@@ -132,6 +134,7 @@ typedef struct SystemError {
     BunString path;
     BunString syscall;
     BunString hostname;
+    /// MinInt if not specified
     int fd;
     BunString dest;
 } SystemError;
@@ -280,7 +283,7 @@ typedef void WebSocketClientTLS;
 
 #ifndef __cplusplus
 typedef struct Bun__ArrayBuffer Bun__ArrayBuffer;
-typedef struct Uint8Array_alias Uint8Array_alias;
+typedef struct JSC::JSUint8Array JSC::JSUint8Array;
 #endif
 
 #ifdef __cplusplus
@@ -308,8 +311,6 @@ BunString toStringRef(WTF::StringImpl* wtfString);
 // Be very careful using this, and ensure the memory owner does not get destroyed.
 BunString toStringView(WTF::StringView view);
 }
-
-using Uint8Array_alias = JSC::JSUint8Array;
 
 typedef struct {
     char* ptr;
@@ -389,16 +390,17 @@ extern "C" const char* Bun__version_sha;
 extern "C" void ZigString__freeGlobal(const unsigned char* ptr, size_t len);
 
 extern "C" size_t Bun__encoding__writeLatin1(const unsigned char* ptr, size_t len, unsigned char* to, size_t other_len, Encoding encoding);
-extern "C" size_t Bun__encoding__writeUTF16(const UChar* ptr, size_t len, unsigned char* to, size_t other_len, Encoding encoding);
+extern "C" size_t Bun__encoding__writeUTF16(const char16_t* ptr, size_t len, unsigned char* to, size_t other_len, Encoding encoding);
 
 extern "C" size_t Bun__encoding__byteLengthLatin1AsUTF8(const unsigned char* ptr, size_t len);
-extern "C" size_t Bun__encoding__byteLengthUTF16AsUTF8(const UChar* ptr, size_t len);
+extern "C" size_t Bun__encoding__byteLengthUTF16AsUTF8(const char16_t* ptr, size_t len);
 
 extern "C" int64_t Bun__encoding__constructFromLatin1(void*, const unsigned char* ptr, size_t len, Encoding encoding);
-extern "C" int64_t Bun__encoding__constructFromUTF16(void*, const UChar* ptr, size_t len, Encoding encoding);
+extern "C" int64_t Bun__encoding__constructFromUTF16(void*, const char16_t* ptr, size_t len, Encoding encoding);
 
 extern "C" void Bun__EventLoop__runCallback1(JSC::JSGlobalObject* global, JSC::EncodedJSValue callback, JSC::EncodedJSValue thisValue, JSC::EncodedJSValue arg1);
 extern "C" void Bun__EventLoop__runCallback2(JSC::JSGlobalObject* global, JSC::EncodedJSValue callback, JSC::EncodedJSValue thisValue, JSC::EncodedJSValue arg1, JSC::EncodedJSValue arg2);
+extern "C" void Bun__EventLoop__runCallback3(JSC::JSGlobalObject* global, JSC::EncodedJSValue callback, JSC::EncodedJSValue thisValue, JSC::EncodedJSValue arg1, JSC::EncodedJSValue arg2, JSC::EncodedJSValue arg3);
 
 /// @note throws a JS exception and returns false if a stack overflow occurs
 template<bool isStrict, bool enableAsymmetricMatchers>

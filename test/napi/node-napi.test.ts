@@ -1,8 +1,8 @@
-import { spawnSync, spawn, Glob } from "bun";
+import { Glob, spawn, spawnSync } from "bun";
 import { beforeAll, describe, expect, it } from "bun:test";
 import { bunEnv, bunExe, isBroken, isCI, isIntelMacOS, isMusl, isWindows } from "harness";
-import { join, dirname } from "path";
 import os from "node:os";
+import { dirname, join } from "path";
 
 const jsNativeApiRoot = join(__dirname, "node-napi-tests", "test", "js-native-api");
 const nodeApiRoot = join(__dirname, "node-napi-tests", "test", "node-api");
@@ -98,7 +98,7 @@ beforeAll(async () => {
 
   async function buildOne(dir: string) {
     const child = spawn({
-      cmd: [bunExe(), "x", "node-gyp", "rebuild", "--debug"],
+      cmd: [bunExe(), "x", "node-gyp", "rebuild", "--debug", "-j", "max"],
       cwd: dir,
       stderr: "pipe",
       stdout: "ignore",

@@ -10,7 +10,6 @@
 #include "openssl/bn.h"
 #include "openssl/err.h"
 #include "ncrypto.h"
-#include "KeyObject.h"
 
 namespace Bun {
 
@@ -129,7 +128,7 @@ JSC_DEFINE_HOST_FUNCTION(jsECDHConvertKey, (JSC::JSGlobalObject * lexicalGlobalO
         return JSValue::encode({});
     }
 
-    if (!EC_POINT_point2oct(group, point, form, buf.data(), buf.size(), nullptr)) {
+    if (!EC_POINT_point2oct(group, point, form, buf.begin(), buf.size(), nullptr)) {
         return ERR::CRYPTO_OPERATION_FAILED(scope, lexicalGlobalObject, "Failed to get public key"_s);
     }
 

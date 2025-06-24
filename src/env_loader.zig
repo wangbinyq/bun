@@ -1,17 +1,11 @@
 const std = @import("std");
 const logger = bun.logger;
-const bun = @import("root").bun;
+const bun = @import("bun");
 const string = bun.string;
 const Output = bun.Output;
-const Global = bun.Global;
 const Environment = bun.Environment;
 const strings = bun.strings;
-const MutableString = bun.MutableString;
-const stringZ = bun.stringZ;
-const default_allocator = bun.default_allocator;
-const CodePoint = bun.CodePoint;
-const C = bun.C;
-const CodepointIterator = @import("./string_immutable.zig").CodepointIterator;
+
 const Analytics = @import("./analytics/analytics_thread.zig");
 const Fs = @import("./fs.zig");
 const URL = @import("./url.zig").URL;
@@ -139,6 +133,7 @@ pub const Loader = struct {
             session_token = token;
         }
         this.aws_credentials = .{
+            .ref_count = .init(),
             .accessKeyId = accessKeyId,
             .secretAccessKey = secretAccessKey,
             .region = region,
@@ -173,6 +168,10 @@ pub const Loader = struct {
 
     pub fn getHttpProxyFor(this: *Loader, url: URL) ?URL {
         return this.getHttpProxy(url.isHTTP(), url.hostname);
+    }
+
+    pub fn hasHTTPProxy(this: *const Loader) bool {
+        return this.has("http_proxy") or this.has("HTTP_PROXY") or this.has("https_proxy") or this.has("HTTPS_PROXY");
     }
 
     pub fn getHttpProxy(this: *Loader, is_http: bool, hostname: ?[]const u8) ?URL {
@@ -519,8 +518,8 @@ pub const Loader = struct {
 
     // mostly for tests
     pub fn loadFromString(this: *Loader, str: string, comptime overwrite: bool, comptime expand: bool) void {
-        var source = logger.Source.initPathString("test", str);
-        Parser.parse(&source, this.allocator, this.map, overwrite, false, expand);
+        const source = &logger.Source.initPathString("test", str);
+        Parser.parse(source, this.allocator, this.map, overwrite, false, expand);
         std.mem.doNotOptimizeAway(&source);
     }
 
@@ -775,10 +774,10 @@ pub const Loader = struct {
         // The null byte here is mostly for debugging purposes.
         buf[end] = 0;
 
-        const source = logger.Source.initPathString(base, buf[0..amount_read]);
+        const source = &logger.Source.initPathString(base, buf[0..amount_read]);
 
         Parser.parse(
-            &source,
+            source,
             this.allocator,
             this.map,
             override,
@@ -786,7 +785,7 @@ pub const Loader = struct {
             true,
         );
 
-        @field(this, base) = source;
+        @field(this, base) = source.*;
     }
 
     pub fn loadEnvFileDynamic(
@@ -846,10 +845,10 @@ pub const Loader = struct {
         // The null byte here is mostly for debugging purposes.
         buf[end] = 0;
 
-        const source = logger.Source.initPathString(file_path, buf[0..amount_read]);
+        const source = &logger.Source.initPathString(file_path, buf[0..amount_read]);
 
         Parser.parse(
-            &source,
+            source,
             this.allocator,
             this.map,
             override,
@@ -857,7 +856,7 @@ pub const Loader = struct {
             true,
         );
 
-        try this.custom_files_loaded.put(file_path, source);
+        try this.custom_files_loaded.put(file_path, source.*);
     }
 };
 
@@ -1338,8 +1337,5 @@ pub const Map = struct {
 };
 
 pub var instance: ?*Loader = null;
-
-const expectString = std.testing.expectEqualStrings;
-const expect = std.testing.expect;
 
 pub const home_env = if (Environment.isWindows) "USERPROFILE" else "HOME";
